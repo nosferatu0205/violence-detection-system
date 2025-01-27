@@ -1,21 +1,28 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLabel, QComboBox, QFileDialog, 
-                             QScrollArea, QTextEdit, QSlider)
-from PyQt5.QtCore import Qt, QTimer
+                             QScrollArea, QTextEdit, QSlider, QCheckBox)
+from PyQt5.QtCore import Qt, QTimer, QThread
 from PyQt5.QtGui import QImage, QPixmap, QColor
+from src.utils.worker import DetectionWorker
 import cv2
 from datetime import datetime
 
 class MainWindow(QMainWindow):
-    def __init__(self, model_service, video_service, config_manager):
+    def __init__(self, model_service, video_service, config_manager, sound_manager):
         super().__init__()
         self.model_service = model_service
         self.video_service = video_service
         self.config_manager = config_manager
+        self.sound_manager = sound_manager
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_frame)
         self.alert_active = False
         self.init_ui()
+        
+        # Restore window geometry if saved
+        geometry = self.config_manager.get_setting('window_geometry')
+        if geometry:
+            self.restoreGeometry(bytes.fromhex(geometry))
 
     def init_ui(self):
         """Initialize the UI"""
@@ -83,8 +90,17 @@ class MainWindow(QMainWindow):
         status_layout = QVBoxLayout(status_group)
         self.status_label = QLabel('Status: Ready')
         self.confidence_label = QLabel('Confidence: -')
+        
+        # Add sound toggle
+        self.sound_checkbox = QCheckBox('Enable Sound Alerts')
+        self.sound_checkbox.setChecked(self.sound_manager.sound_enabled)
+        self.sound_checkbox.stateChanged.connect(
+            lambda state: self.sound_manager.toggle_sound(bool(state))
+        )
+        
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.confidence_label)
+        status_layout.addWidget(self.sound_checkbox)
         right_layout.addWidget(status_group)
 
         # Event log
@@ -195,6 +211,7 @@ class MainWindow(QMainWindow):
                         self.update_alert_style(is_violence)
                         if is_violence:
                             self.log_event(f'Violence detected (Confidence: {confidence:.2f})')
+                            self.sound_manager.play_alert()
                         
                 except Exception as e:
                     error_msg = f'Detection error: {str(e)}'
@@ -203,5 +220,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Handle application closure"""
+        # Save window geometry
+        geometry = bytes(self.saveGeometry()).hex()
+        self.config_manager.update_setting('window_geometry', geometry)
+        
+        # Stop detection and cleanup
         self.stop_detection()
         event.accept()
