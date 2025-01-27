@@ -1,0 +1,5 @@
+tensorflow==2.x.x
+opencv-python==4.x.x
+PyQt5==5.x.x
+numpy==1.x.x
+joblib==1.x.x
