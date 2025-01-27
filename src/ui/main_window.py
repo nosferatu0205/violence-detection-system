@@ -7,10 +7,11 @@ import cv2
 from datetime import datetime
 
 class MainWindow(QMainWindow):
-    def __init__(self, model_service, video_service):
+    def __init__(self, model_service, video_service, config_manager):
         super().__init__()
         self.model_service = model_service
         self.video_service = video_service
+        self.config_manager = config_manager
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_frame)
         self.alert_active = False
@@ -66,11 +67,13 @@ class MainWindow(QMainWindow):
         self.performance_slider = QSlider(Qt.Horizontal)
         self.performance_slider.setMinimum(0)
         self.performance_slider.setMaximum(2)
-        self.performance_slider.setValue(1)
+        initial_mode = self.config_manager.get_setting('performance_mode', 1)
+        self.performance_slider.setValue(initial_mode)
         self.performance_slider.setTickPosition(QSlider.TicksBelow)
         self.performance_slider.setTickInterval(1)
         slider_layout.addWidget(self.performance_slider)
-        self.performance_label = QLabel('Balanced')
+        modes = {0: 'Performance', 1: 'Balanced', 2: 'Quality'}
+        self.performance_label = QLabel(modes[initial_mode])
         slider_layout.addWidget(self.performance_label)
         self.performance_slider.valueChanged.connect(self.update_performance_mode)
         right_layout.addWidget(slider_group)
@@ -103,7 +106,16 @@ class MainWindow(QMainWindow):
     def update_performance_mode(self):
         """Update the performance mode based on slider value"""
         modes = {0: 'Performance', 1: 'Balanced', 2: 'Quality'}
-        self.performance_label.setText(modes[self.performance_slider.value()])
+        mode = self.performance_slider.value()
+        self.performance_label.setText(modes[mode])
+        
+        # Update services
+        self.model_service.update_processing_settings(mode)
+        self.video_service.update_processing_settings(mode)
+        
+        # Save to config
+        self.config_manager.update_setting('performance_mode', mode)
+        self.log_event(f'Performance mode changed to {modes[mode]}')
 
     def log_event(self, message):
         """Add event to log with timestamp"""
