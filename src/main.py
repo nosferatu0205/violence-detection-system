@@ -1,4 +1,9 @@
 import sys
+import os
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from PyQt5.QtWidgets import QApplication
 from src.core.model_service import ModelService
 from src.core.video_service import VideoService

@@ -1,6 +1,6 @@
-import cv2
 from collections import deque
 import numpy as np
+import cv2
 
 class VideoService:
     def __init__(self, config_manager, sequence_length):
@@ -11,26 +11,76 @@ class VideoService:
         self.frames_queue = deque(maxlen=sequence_length)
         self.frame_count = 0
         self.processing_settings = self.config_manager.get_processing_settings()
+        self.current_source = None
+        
+    def get_available_cameras(self):
+        """Get list of available camera devices with names"""
+        available_cameras = []
+        try:
+            # Try to get default camera first
+            cap = cv2.VideoCapture(0)
+            if cap.isOpened():
+                ret, _ = cap.read()
+                if ret:
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    name = f"Default Camera ({width}x{height})"
+                else:
+                    name = "Default Camera"
+                available_cameras.append({"id": 0, "name": name})
+                cap.release()
 
-    def update_processing_settings(self, performance_mode):
-        """Update processing settings based on performance mode"""
-        self.processing_settings = self.config_manager.get_processing_settings(performance_mode)
-        self.frame_count = 0  # Reset frame count
+            # If we found the default camera, don't need to check index 0 again
+            start_idx = 1 if available_cameras else 0
+            
+            # Check additional cameras
+            for i in range(start_idx, 2):  # Only check first two indices to avoid long startup
+                try:
+                    cap = cv2.VideoCapture(i)
+                    if cap.isOpened():
+                        ret, _ = cap.read()
+                        if ret:
+                            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            name = f"Camera {i} ({width}x{height})"
+                        else:
+                            name = f"Camera {i}"
+                        available_cameras.append({"id": i, "name": name})
+                        cap.release()
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"Error detecting cameras: {str(e)}")
+            
+        # If no cameras found, add a dummy entry for testing
+        if not available_cameras:
+            available_cameras.append({"id": 0, "name": "Default Camera"})
+            
+        return available_cameras
+
+    def switch_source(self, source):
+        """Switch to a different video source without stopping detection"""
+        if self.current_source == source:
+            return True
+            
+        try:
+            new_cap = cv2.VideoCapture(source)
+            if new_cap.isOpened():
+                if self.cap is not None:
+                    self.cap.release()
+                self.cap = new_cap
+                self.current_source = source
+                self.frames_queue.clear()
+                return True
+            else:
+                new_cap.release()
+                return False
+        except Exception:
+            return False
 
     def start_video_capture(self, source):
         """Start video capture from file or camera"""
-        if self.cap is not None:
-            self.cap.release()
-        
-        self.cap = cv2.VideoCapture(source)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Failed to open video source: {source}")
-        
-        # Store last used source if it's a camera
-        if isinstance(source, int):
-            self.config_manager.update_setting('camera_index', source)
-        
-        return self.cap.isOpened()
+        return self.switch_source(source)
 
     def get_frame(self):
         """Get a single frame from the video source"""
@@ -57,16 +107,6 @@ class VideoService:
             return list(self.frames_queue)
         return None
 
-    def get_available_cameras(self):
-        """Get list of available camera devices"""
-        available_cameras = []
-        for i in range(5):  # Check first 5 camera indices
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                available_cameras.append(i)
-                cap.release()
-        return available_cameras
-
     def release(self):
         """Release the video capture"""
         if self.cap is not None:
@@ -74,6 +114,11 @@ class VideoService:
             self.cap = None
             self.frames_queue.clear()
             self.frame_count = 0
+
+    def update_processing_settings(self, performance_mode):
+        """Update processing settings based on performance mode"""
+        self.processing_settings = self.config_manager.get_processing_settings(performance_mode)
+        self.frame_count = 0  # Reset frame count
 
     def __del__(self):
         """Cleanup on deletion"""

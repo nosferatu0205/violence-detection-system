@@ -1,0 +1,9 @@
+Metadata-Version: 2.2
+Name: violence-detection-system
+Version: 0.1
+Requires-Dist: opencv-python
+Requires-Dist: numpy
+Requires-Dist: tensorflow
+Requires-Dist: PyQt5
+Requires-Dist: joblib
+Dynamic: requires-dist

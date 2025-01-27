@@ -1,11 +1,23 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+
+try:
+    import cv2
+    print("OpenCV imported successfully:", cv2.__version__)
+except ImportError as e:
+    print("Failed to import OpenCV:", str(e))
+
+import numpy as np
+from datetime import datetime
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLabel, QComboBox, QFileDialog, 
                              QScrollArea, QTextEdit, QSlider, QCheckBox)
-from PyQt5.QtCore import Qt, QTimer, QThread
+from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtGui import QImage, QPixmap, QColor
 from src.utils.worker import DetectionWorker
-import cv2
-from datetime import datetime
 
 class MainWindow(QMainWindow):
     def __init__(self, model_service, video_service, config_manager, sound_manager):
@@ -14,9 +26,12 @@ class MainWindow(QMainWindow):
         self.video_service = video_service
         self.config_manager = config_manager
         self.sound_manager = sound_manager
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_frame)
         self.alert_active = False
+        
+        # Worker thread setup
+        self.worker = None
+        self.worker_thread = None
+        
         self.init_ui()
         
         # Restore window geometry if saved
@@ -42,17 +57,26 @@ class MainWindow(QMainWindow):
         self.video_label.setStyleSheet("QLabel { background-color: black; }")
         left_layout.addWidget(self.video_label)
         
-        # Right panel - Controls and information
+        # Right panel - Controls
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
-        # Source selection
+        # Source selection with camera list
         source_group = QWidget()
         source_layout = QVBoxLayout(source_group)
+        source_layout.addWidget(QLabel('Source:'))
+        
+        # Main source type selection
         self.source_combo = QComboBox()
         self.source_combo.addItems(['Camera', 'Video File'])
-        source_layout.addWidget(QLabel('Source:'))
+        self.source_combo.currentTextChanged.connect(self.handle_source_change)
         source_layout.addWidget(self.source_combo)
+        
+        # Camera selection
+        self.camera_combo = QComboBox()
+        self.update_camera_list()
+        self.camera_combo.setVisible(True)
+        source_layout.addWidget(self.camera_combo)
         right_layout.addWidget(source_group)
 
         # Control buttons
@@ -74,6 +98,7 @@ class MainWindow(QMainWindow):
         self.performance_slider = QSlider(Qt.Horizontal)
         self.performance_slider.setMinimum(0)
         self.performance_slider.setMaximum(2)
+        
         initial_mode = self.config_manager.get_setting('performance_mode', 1)
         self.performance_slider.setValue(initial_mode)
         self.performance_slider.setTickPosition(QSlider.TicksBelow)
@@ -119,6 +144,23 @@ class MainWindow(QMainWindow):
         # Status bar
         self.statusBar().showMessage('System Ready')
 
+    def update_camera_list(self):
+        """Update the list of available cameras"""
+        self.camera_combo.clear()
+        cameras = self.video_service.get_available_cameras()
+        for camera in cameras:
+            self.camera_combo.addItem(camera['name'], camera['id'])
+        
+        # Select last used camera if available
+        last_camera = self.config_manager.get_setting('last_camera', 0)
+        index = self.camera_combo.findData(last_camera)
+        if index >= 0:
+            self.camera_combo.setCurrentIndex(index)
+
+    def handle_source_change(self, source_type):
+        """Handle changes in source selection"""
+        self.camera_combo.setVisible(source_type == 'Camera')
+
     def update_performance_mode(self):
         """Update the performance mode based on slider value"""
         modes = {0: 'Performance', 1: 'Balanced', 2: 'Quality'}
@@ -135,21 +177,27 @@ class MainWindow(QMainWindow):
 
     def log_event(self, message):
         """Add event to log with timestamp"""
+        from datetime import datetime
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.log_text.append(f'[{timestamp}] {message}')
 
     def start_detection(self):
         """Start the detection process"""
-        source = 0 if self.source_combo.currentText() == 'Camera' else self.get_video_file()
+        if self.source_combo.currentText() == 'Camera':
+            source = self.camera_combo.currentData()
+            self.config_manager.update_setting('last_camera', source)
+        else:
+            source = self.get_video_file()
+            
         if source is not None:
             try:
                 self.video_service.start_video_capture(source)
-                self.timer.start(30)  # Update every 30ms
-                self.status_label.setText('Status: Running')
+                self.init_worker()
                 self.start_button.setEnabled(False)
                 self.stop_button.setEnabled(True)
-                self.log_event('Detection started')
                 self.source_combo.setEnabled(False)
+                self.camera_combo.setEnabled(False)
+                self.log_event('Detection started')
             except Exception as e:
                 error_msg = f'Error: {str(e)}'
                 self.status_label.setText(error_msg)
@@ -157,7 +205,7 @@ class MainWindow(QMainWindow):
 
     def stop_detection(self):
         """Stop the detection process"""
-        self.timer.stop()
+        self.cleanup_worker()
         self.video_service.release()
         self.status_label.setText('Status: Stopped')
         self.confidence_label.setText('Confidence: -')
@@ -165,15 +213,65 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.source_combo.setEnabled(True)
+        self.camera_combo.setEnabled(True)
         self.log_event('Detection stopped')
         self.alert_active = False
         self.update_alert_style(False)
 
-    def get_video_file(self):
-        """Open file dialog to select video file"""
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "Select Video File", "", "Video Files (*.mp4 *.avi *.mkv)")
-        return filename if filename else None
+    def init_worker(self):
+        """Initialize the worker thread"""
+        # Create thread and worker
+        self.worker_thread = QThread()
+        self.worker = DetectionWorker(self.video_service, self.model_service)
+        self.worker.moveToThread(self.worker_thread)
+
+        # Connect signals
+        self.worker_thread.started.connect(self.worker.run)
+        self.worker.frame_ready.connect(self.update_display)
+        self.worker.prediction_ready.connect(self.handle_prediction)
+        self.worker.error.connect(self.handle_error)
+
+        # Start thread
+        self.worker_thread.start()
+
+    def cleanup_worker(self):
+        """Clean up worker thread"""
+        if self.worker:
+            self.worker.stop()
+        if self.worker_thread:
+            self.worker_thread.quit()
+            self.worker_thread.wait()
+        self.worker = None
+        self.worker_thread = None
+
+    def update_display(self, frame):
+        """Update the video display with a new frame"""
+        if frame is not None:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb_frame.shape
+            bytes_per_line = ch * w
+            qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
+            self.video_label.setPixmap(QPixmap.fromImage(qt_image).scaled(
+                self.video_label.size(), Qt.KeepAspectRatio))
+
+    def handle_prediction(self, predicted_class, confidence):
+        """Handle new prediction results"""
+        self.status_label.setText(f'Status: {predicted_class}')
+        self.confidence_label.setText(f'Confidence: {confidence:.2f}')
+        
+        # Handle alerts
+        is_violence = predicted_class == "Violence" and confidence > 0.5
+        if is_violence != self.alert_active:
+            self.alert_active = is_violence
+            self.update_alert_style(is_violence)
+            if is_violence:
+                self.log_event(f'Violence detected (Confidence: {confidence:.2f})')
+                self.sound_manager.play_alert()
+
+    def handle_error(self, error_message):
+        """Handle errors from the worker"""
+        self.log_event(f"Error: {error_message}")
+        self.status_label.setText(f"Error: {error_message}")
 
     def update_alert_style(self, is_alert):
         """Update UI style based on alert status"""
@@ -184,39 +282,11 @@ class MainWindow(QMainWindow):
             self.video_label.setStyleSheet("QLabel { background-color: black; }")
             self.status_label.setStyleSheet("")
 
-    def update_frame(self):
-        """Update the video frame and run detection"""
-        frame = self.video_service.get_frame()
-        if frame is not None:
-            # Convert frame to QImage for display
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w, ch = rgb_frame.shape
-            bytes_per_line = ch * w
-            qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-            self.video_label.setPixmap(QPixmap.fromImage(qt_image).scaled(
-                self.video_label.size(), Qt.KeepAspectRatio))
-
-            # Run detection if we have enough frames
-            frames = self.video_service.get_frame_sequence()
-            if frames is not None:
-                try:
-                    predicted_class, confidence = self.model_service.predict_frames(frames)
-                    self.status_label.setText(f'Status: {predicted_class}')
-                    self.confidence_label.setText(f'Confidence: {confidence:.2f}')
-                    
-                    # Handle alerts
-                    is_violence = predicted_class == "Violence" and confidence > 0.5
-                    if is_violence != self.alert_active:
-                        self.alert_active = is_violence
-                        self.update_alert_style(is_violence)
-                        if is_violence:
-                            self.log_event(f'Violence detected (Confidence: {confidence:.2f})')
-                            self.sound_manager.play_alert()
-                        
-                except Exception as e:
-                    error_msg = f'Detection error: {str(e)}'
-                    self.status_label.setText(error_msg)
-                    self.log_event(error_msg)
+    def get_video_file(self):
+        """Open file dialog to select video file"""
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Select Video File", "", "Video Files (*.mp4 *.avi *.mkv)")
+        return filename if filename else None
 
     def closeEvent(self, event):
         """Handle application closure"""
