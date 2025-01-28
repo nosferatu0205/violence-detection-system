@@ -78,9 +78,18 @@ class VideoService:
         except Exception:
             return False
 
+    
+    def set_playback_speed(self, speed):
+        """Set video playback speed"""
+        if self.cap:
+            self.cap.set(cv2.CAP_PROP_FPS, 
+                        self.original_fps * speed)
     def start_video_capture(self, source):
         """Start video capture from file or camera"""
-        return self.switch_source(source)
+        success = self.switch_source(source)
+        if success:
+            self.original_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        return success
 
     def get_frame(self):
         """Get a single frame from the video source"""

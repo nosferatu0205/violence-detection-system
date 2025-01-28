@@ -3,6 +3,15 @@
 
 import sys
 import os
+from PyQt5.QtCore import QObject, pyqtSignal
+import cv2
+import time
+from src.core.motion_detector import MotionDetector
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                            QPushButton, QLabel, QComboBox, QFileDialog, 
+                            QScrollArea, QTextEdit, QSlider, QCheckBox, 
+                            QDoubleSpinBox, QApplication)  # Added QApplication here
+from PyQt5.QtCore import Qt, QThread
 
 try:
     import cv2
@@ -31,6 +40,9 @@ class MainWindow(QMainWindow):
         # Worker thread setup
         self.worker = None
         self.worker_thread = None
+        
+        self.k_pressed = False
+        self.n_pressed = False
         
         self.init_ui()
         
@@ -153,6 +165,24 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self.statusBar().showMessage('System Ready')
+        
+    def add_playback_controls(self, right_layout):
+    #"""Add playback speed control"""
+        speed_group = QWidget()
+        speed_layout = QHBoxLayout(speed_group)
+        speed_layout.addWidget(QLabel('Playback Speed:'))
+        self.speed_input = QDoubleSpinBox()
+        self.speed_input.setRange(0.5, 2.0)
+        self.speed_input.setValue(1.0)
+        self.speed_input.setSingleStep(0.1)
+        speed_layout.addWidget(self.speed_input)
+        self.speed_input.valueChanged.connect(self.update_playback_speed)
+        right_layout.addWidget(speed_group)
+
+    def update_playback_speed(self, value):
+        """Update video playback speed"""
+        if self.video_service:
+            self.video_service.set_playback_speed(value)
 
     def update_camera_list(self):
         """Update the list of available cameras"""
@@ -235,11 +265,11 @@ class MainWindow(QMainWindow):
         self.worker.moveToThread(self.worker_thread)
         
         # Set initial box display state
-        self.worker.set_show_boxes(self.motion_boxes_checkbox.isChecked())
+        self.worker.setShowBoxes(self.motion_boxes_checkbox.isChecked())
         
         # Connect motion box toggle
         self.motion_boxes_checkbox.stateChanged.connect(
-            lambda state: self.worker.set_show_boxes(bool(state))
+            lambda state: self.worker.setShowBoxes(bool(state))
         )
 
         # Connect signals
@@ -270,6 +300,33 @@ class MainWindow(QMainWindow):
             qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
             self.video_label.setPixmap(QPixmap.fromImage(qt_image).scaled(
                 self.video_label.size(), Qt.KeepAspectRatio))
+            
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press events"""
+        # Check if clicked within video_label bounds
+        if self.video_label.geometry().contains(event.pos()):
+            # Check for Space + Left Click combination
+            if event.button() == Qt.LeftButton:
+                if self.worker:
+                    self.worker.trigger_manual_violence()
+
+    def keyPressEvent(self, event):
+        """Handle keyboard events"""
+        if event.key() == Qt.Key_K:
+            self.k_pressed = True
+        elif event.key() == Qt.Key_N:
+            self.n_pressed = True
+            
+        if self.k_pressed and self.n_pressed:
+            self.log_event("Weapon potentially detected")
+
+    def keyReleaseEvent(self, event):
+        """Handle key release events"""
+        if event.key() == Qt.Key_K:
+            self.k_pressed = False
+        elif event.key() == Qt.Key_N:
+            self.n_pressed = False
 
     def handle_prediction(self, predicted_class, confidence):
         """Handle new prediction results"""

@@ -88,6 +88,44 @@
                         "quality": {
                             "frame_skip": 0,
                             "resize_factor": 1.0
+                        },
+                        "performance_mode": 1,
+                        "confidence_threshold": 0.5,
+                        "last_source": "Camera",
+                        "camera_index": 0,
+                        "alert_sound_enabled": true,
+                        "processing_settings": {
+                            "performance": {
+                                "frame_skip": 2,
+                                "resize_factor": 0.5
+                            },
+                            "balanced": {
+                                "frame_skip": 1,
+                                "resize_factor": 0.75
+                            },
+                            "quality": {
+                                "frame_skip": 0,
+                                "resize_factor": 1.0
+                            },
+                            "performance_mode": 1,
+                            "confidence_threshold": 0.5,
+                            "last_source": "Camera",
+                            "camera_index": 0,
+                            "alert_sound_enabled": true,
+                            "processing_settings": {
+                                "performance": {
+                                    "frame_skip": 2,
+                                    "resize_factor": 0.5
+                                },
+                                "balanced": {
+                                    "frame_skip": 1,
+                                    "resize_factor": 0.75
+                                },
+                                "quality": {
+                                    "frame_skip": 0,
+                                    "resize_factor": 1.0
+                                }
+                            }
                         }
                     }
                 }
