@@ -28,6 +28,9 @@ class MainWindow(QMainWindow):
         self.sound_manager = sound_manager
         self.alert_active = False
         
+        self.manual_trigger_keys = set()  # Track pressed keys
+        self.installEventFilter(self)  # Enable key event filtering
+        
         # Worker thread setup
         self.worker = None
         self.worker_thread = None
@@ -56,6 +59,9 @@ class MainWindow(QMainWindow):
         self.video_label.setMinimumSize(640, 480)
         self.video_label.setStyleSheet("QLabel { background-color: black; }")
         left_layout.addWidget(self.video_label)
+        
+        self.video_label.setMouseTracking(True)
+        self.video_label.mousePressEvent = self.handle_video_click
         
         # Right panel - Controls
         right_panel = QWidget()
@@ -153,6 +159,8 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self.statusBar().showMessage('System Ready')
+        
+        
 
     def update_camera_list(self):
         """Update the list of available cameras"""
