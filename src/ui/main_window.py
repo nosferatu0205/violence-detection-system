@@ -116,16 +116,26 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel('Status: Ready')
         self.confidence_label = QLabel('Confidence: -')
         
+        # Add detection options
+        options_group = QWidget()
+        options_layout = QVBoxLayout(options_group)
+        
+        # Add motion boxes toggle
+        self.motion_boxes_checkbox = QCheckBox('Show Motion Boxes')
+        self.motion_boxes_checkbox.setChecked(True)
+        options_layout.addWidget(self.motion_boxes_checkbox)
+        
         # Add sound toggle
         self.sound_checkbox = QCheckBox('Enable Sound Alerts')
         self.sound_checkbox.setChecked(self.sound_manager.sound_enabled)
         self.sound_checkbox.stateChanged.connect(
             lambda state: self.sound_manager.toggle_sound(bool(state))
         )
+        options_layout.addWidget(self.sound_checkbox)
         
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.confidence_label)
-        status_layout.addWidget(self.sound_checkbox)
+        status_layout.addWidget(options_group)
         right_layout.addWidget(status_group)
 
         # Event log
@@ -177,7 +187,6 @@ class MainWindow(QMainWindow):
 
     def log_event(self, message):
         """Add event to log with timestamp"""
-        from datetime import datetime
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.log_text.append(f'[{timestamp}] {message}')
 
@@ -224,6 +233,14 @@ class MainWindow(QMainWindow):
         self.worker_thread = QThread()
         self.worker = DetectionWorker(self.video_service, self.model_service)
         self.worker.moveToThread(self.worker_thread)
+        
+        # Set initial box display state
+        self.worker.set_show_boxes(self.motion_boxes_checkbox.isChecked())
+        
+        # Connect motion box toggle
+        self.motion_boxes_checkbox.stateChanged.connect(
+            lambda state: self.worker.set_show_boxes(bool(state))
+        )
 
         # Connect signals
         self.worker_thread.started.connect(self.worker.run)
