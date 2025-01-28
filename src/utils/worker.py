@@ -20,15 +20,7 @@ class DetectionWorker(QObject):
         self.violence_counter = 0
         self.cooldown_counter = 0
         self.MIN_VIOLENCE_FRAMES = 15
-        # Calculate COOLDOWN_PERIOD based on FPS for 3 seconds
-        self.fps = self.video_service.original_fps or 30.0
-        self.COOLDOWN_PERIOD = int(2.0 * self.fps)  # 3 seconds worth of frames
-        self.last_violence_time = None
-        
-        self.manual_violence_trigger = False
-        self.manual_trigger_time = None
-        
-    
+        self.COOLDOWN_PERIOD = 45
 
     def stop(self):
         self.running = False
@@ -66,27 +58,23 @@ class DetectionWorker(QObject):
                     try:
                         predicted_class, confidence = self.model_service.predict_frames(frames)
                         
-                        current_time = time.time()
-                        
-                        # Apply smoothing logic with time-based cooldown
-                        if predicted_class == "Violence" and confidence > 0.5:
+                        # Apply smoothing logic
+                        if predicted_class == "Violence" and confidence > 0.65:
                             self.violence_counter += 1
                             if self.violence_counter >= self.MIN_VIOLENCE_FRAMES:
                                 self.is_violence = True
-                                self.last_violence_time = current_time
                                 self.cooldown_counter = 0
                         elif self.is_violence:
-                            # Check if 3 seconds have passed since last violence detection
-                            if self.last_violence_time and (current_time - self.last_violence_time) >= 3.0:
+                            self.cooldown_counter += 1
+                            if self.cooldown_counter >= self.COOLDOWN_PERIOD:
                                 self.is_violence = False
                                 self.violence_counter = 0
-                                self.last_violence_time = None
                         else:
                             self.violence_counter = max(0, self.violence_counter - 1)
 
                         # Use smoothed state for prediction
                         if self.is_violence:
-                            self.prediction_ready.emit("Violence", max(confidence, 0.5))
+                            self.prediction_ready.emit("Violence", max(confidence, 0.65))
                         else:
                             self.prediction_ready.emit(predicted_class, confidence)
                             

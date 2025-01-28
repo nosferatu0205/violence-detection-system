@@ -12,8 +12,6 @@ class VideoService:
         self.frame_count = 0
         self.processing_settings = self.config_manager.get_processing_settings()
         self.current_source = None
-        self.playback_speed = 1.5  # Speed multiplier
-        self.original_fps = None
         
     def get_available_cameras(self):
         """Get list of available camera devices with names"""
@@ -73,12 +71,6 @@ class VideoService:
                 self.cap = new_cap
                 self.current_source = source
                 self.frames_queue.clear()
-                
-                # Store original FPS
-                self.original_fps = self.cap.get(cv2.CAP_PROP_FPS)
-                if self.original_fps == 0:  # For cameras that don't report FPS
-                    self.original_fps = 30.0
-                    
                 return True
             else:
                 new_cap.release()
@@ -95,13 +87,11 @@ class VideoService:
         if self.cap is None:
             return None
 
-        # Skip frames based on performance settings and playback speed
+        # Skip frames based on performance settings
         skip_frames = self.processing_settings['frame_skip']
-        speed_skip = max(0, int((self.playback_speed - 1) * self.original_fps / 10))
-        total_skip = skip_frames + speed_skip
         
         frame = None
-        for _ in range(total_skip + 1):
+        for _ in range(skip_frames + 1):
             ret, frame = self.cap.read()
             if not ret:
                 return None
@@ -129,10 +119,6 @@ class VideoService:
         """Update processing settings based on performance mode"""
         self.processing_settings = self.config_manager.get_processing_settings(performance_mode)
         self.frame_count = 0  # Reset frame count
-
-    def set_playback_speed(self, speed):
-        """Set the playback speed multiplier"""
-        self.playback_speed = speed
 
     def __del__(self):
         """Cleanup on deletion"""
