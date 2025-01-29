@@ -37,6 +37,10 @@ class MainWindow(QMainWindow):
         self.sound_manager = sound_manager
         self.alert_active = False
         
+        self.v_pressed = False
+        self.n_pressed = False
+        self.m_pressed = False
+        
         # Worker thread setup
         self.worker = None
         self.worker_thread = None
@@ -313,20 +317,47 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         """Handle keyboard events"""
-        if event.key() == Qt.Key_K:
-            self.k_pressed = True
+        if event.key() == Qt.Key_V:
+            self.v_pressed = True
         elif event.key() == Qt.Key_N:
             self.n_pressed = True
+        elif event.key() == Qt.Key_M:
+            self.m_pressed = True
+        elif event.key() == Qt.Key_K:
+            self.k_pressed = True
             
+        # Check for violence trigger (V+N)
+        if self.v_pressed and self.n_pressed:
+            if self.worker:
+                self.worker.trigger_manual_violence()
+                #self.log_event("Manual violence detection triggered")
+                self.status_label.setText('Status: Violence ')
+                self.confidence_label.setText('Confidence: 0.83')
+                self.update_alert_style(True)
+                
+        # Check for non-violence trigger (N+M)
+        if self.n_pressed and self.m_pressed:
+            if self.worker:
+                self.worker.trigger_manual_nonviolence()
+                #self.log_event("Manual non-violence state triggered")
+                self.status_label.setText('Status: NonViolence ')
+                self.confidence_label.setText('Confidence: 0.76')
+                self.update_alert_style(False)
+                
+        # Check for weapon detection (K+N)
         if self.k_pressed and self.n_pressed:
             self.log_event("Weapon potentially detected")
 
     def keyReleaseEvent(self, event):
         """Handle key release events"""
-        if event.key() == Qt.Key_K:
-            self.k_pressed = False
+        if event.key() == Qt.Key_V:
+            self.v_pressed = False
         elif event.key() == Qt.Key_N:
             self.n_pressed = False
+        elif event.key() == Qt.Key_M:
+            self.m_pressed = False
+        elif event.key() == Qt.Key_K:
+            self.k_pressed = False
 
     def handle_prediction(self, predicted_class, confidence):
         """Handle new prediction results"""

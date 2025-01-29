@@ -112,8 +112,14 @@ class DetectionWorker(QObject):
         
     def trigger_manual_violence(self):
         """Manually trigger violence detection"""
+        self.is_violence = True
         self.manual_violence_trigger = True
-        self.violence_persist_time = 1
+        self.violence_persist_time = time.time()
+        
+    def trigger_manual_nonviolence(self): 
+        self.is_violence = False
+        self.manual_violence_trigger = False
+        self.violence_persist_time = time.time()  # Used to keep nonviolence state for 1 second
         
     def stop(self):
         """Stop the worker"""
@@ -134,12 +140,15 @@ class DetectionWorker(QObject):
 
                 current_time = time.time()
                 
-                # Check for manual violence trigger or persistence
-                if self.manual_violence_trigger or (self.violence_persist_time and 
-                    current_time - self.violence_persist_time < self.VIOLENCE_PERSISTENCE):
-                    predicted_class = "Violence"
+                # Check for manual triggers and persistence
+                if self.manual_violence_trigger or (
+                    self.violence_persist_time and 
+                    current_time - self.violence_persist_time < (
+                        3 if self.is_violence else 1  # 3 seconds for violence, 1 for nonviolence
+                    )
+                ):
+                    predicted_class = "Violence" if self.is_violence else "NonViolence"
                     confidence = 1.0
-                    self.is_violence = True
                 else:
                     # Run detection if we have enough frames
                     frames = self.video_service.get_frame_sequence()
