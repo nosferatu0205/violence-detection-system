@@ -1,5 +1,7 @@
-tensorflow==2.x.x
-opencv-python==4.x.x
-PyQt5==5.x.x
-numpy==1.x.x
-joblib==1.x.x
+tensorflow==2.13.0
+opencv-python==4.8.1.78
+PyQt5==5.15.9
+numpy==1.24.3
+joblib==1.3.2
+mediapipe==0.10.8
+scikit-learn==1.3.2
